@@ -35,8 +35,13 @@
 
 /* USER CODE BEGIN Includes */
 
+#include <string.h>
 #include "EtherShield.h"
-#define BUF_SIZE (1<<10)
+#define NET_BUF_SIZE (1<<10)
+#define UART_BUF_SIZE 1
+
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#define BUF_SIZE MAX(NET_BUF_SIZE, UART_BUF_SIZE)
 
 /* USER CODE END Includes */
 
@@ -103,7 +108,47 @@ static inline void blink(int times, int delay) {
 }
 
 void ES_PingCallback(void) {
-	//STM_EVAL_LEDToggle(LED4);
+}
+
+uint16_t get_udp_data_len(uint8_t *buf)
+{
+	int16_t i;
+	i=(((int16_t)buf[IP_TOTLEN_H_P])<<8)|(buf[IP_TOTLEN_L_P]&0xff);
+	i-=IP_HEADER_LEN;
+	i-=8;
+	if (i<=0){
+		i=0;
+	}
+	return((uint16_t)i);
+}
+
+static uint16_t info_data_len = 0;
+uint16_t packetloop_icmp_udp(uint8_t *buf,uint16_t plen)
+{
+	if(eth_type_is_arp_and_my_ip(buf,plen)){
+		if (buf[ETH_ARP_OPCODE_L_P]==ETH_ARP_OPCODE_REQ_L_V){
+			// is it an arp request 
+			make_arp_answer_from_request(buf);
+		}
+		return(0);
+
+	}
+	// check if ip packets are for us:
+	if(eth_type_is_ip_and_my_ip(buf,plen)==0){
+		return(0);
+	}
+
+	if(buf[IP_PROTO_P]==IP_PROTO_ICMP_V && buf[ICMP_TYPE_P]==ICMP_TYPE_ECHOREQUEST_V){
+		make_echo_reply_from_request(buf,plen);
+		return(0);
+	}
+
+	if (buf[IP_PROTO_P]==IP_PROTO_UDP_V) {
+		info_data_len=get_udp_data_len(buf);
+		return(IP_HEADER_LEN+8+14);
+	}
+
+	return(0);
 }
 
 /* USER CODE END PFP */
@@ -138,10 +183,21 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	static uint8_t uart_buf[UART_BUF_SIZE + 1];
 
 	uint8_t mac[] = {02, 03, 04, 05, 06, 07};
 	uint8_t ip[]  = {10,4,33,123};
+	static uint8_t net_buf[NET_BUF_SIZE + 1];
 	static uint8_t buf[BUF_SIZE + 1];
+
+	/* // USART echo node
+	while (1)
+	{
+		if (HAL_UART_Receive(&huart3, uart_buf, UART_BUF_SIZE, 0) == HAL_OK) {
+			HAL_UART_Transmit(&huart3, uart_buf, 1, 0xffffffff);
+		}
+	}
+	*/
 
 	ES_enc28j60SpiInit(&hspi1);
 	ES_enc28j60Init(mac);
@@ -151,22 +207,41 @@ int main(void)
 	if (enc28j60_rev <= 0)
 		error(2, 0);
 
-	ES_init_ip_arp_udp_tcp(mac, ip, 23);
+	ES_init_ip_arp_udp_tcp(mac, ip, 80);
+	uint16_t dat_p = 0;
+
+	/* // UDP echo server
+	while (1)
+	{
+		dat_p = packetloop_icmp_udp(net_buf, ES_enc28j60PacketReceive(NET_BUF_SIZE, net_buf));
+		if (dat_p != 0) {
+			memcpy(buf, &net_buf[dat_p], info_data_len);
+			make_udp_reply_from_request(net_buf, (char *)buf, info_data_len, 23);
+		}
+	}
+	*/
+
 
 	while (1)
 	{
-		uint16_t dat_p;
 
-		// read packet, handle ping and wait for a tcp packet:
-		dat_p = ES_packetloop_icmp_tcp(buf,
-				ES_enc28j60PacketReceive(BUF_SIZE, buf));
-
-		/* dat_p will be unequal to zero if there is a valid
-		 * http get */
-		if (dat_p == 0) {
-			// no http request
-			continue;
+		while (HAL_UART_Receive(&huart3, uart_buf, UART_BUF_SIZE, 0xff) == HAL_OK) {
+			if (dat_p != 0) {
+				make_udp_reply_from_request(net_buf, (char *)uart_buf, UART_BUF_SIZE, 23);
+			}
+			HAL_Delay(400);
 		}
+
+		HAL_Delay(1);
+		dat_p = packetloop_icmp_udp(net_buf, ES_enc28j60PacketReceive(NET_BUF_SIZE, net_buf));
+
+		if (dat_p == 0)
+			continue;
+
+		HAL_UART_Transmit(&huart3, &net_buf[dat_p], info_data_len, 0xffffffff);
+		HAL_Delay(400);
+
+
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
@@ -186,11 +261,11 @@ void SystemClock_Config(void)
   RCC_PeriphCLKInitTypeDef PeriphClkInit;
 
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL12;
-  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV2;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL6;
+  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
   HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_SYSCLK;
@@ -220,7 +295,7 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLED;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLED;
@@ -237,12 +312,12 @@ void MX_USART3_UART_Init(void)
 
   huart3.Instance = USART3;
   huart3.Init.BaudRate = 115200;
-  huart3.Init.WordLength = UART_WORDLENGTH_7B;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
   huart3.Init.Mode = UART_MODE_TX_RX;
   huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_8;
   huart3.Init.OneBitSampling = UART_ONEBIT_SAMPLING_DISABLED;
   huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
   HAL_UART_Init(&huart3);

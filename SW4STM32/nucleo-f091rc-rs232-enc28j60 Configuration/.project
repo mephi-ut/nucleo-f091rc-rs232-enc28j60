@@ -27,14 +27,6 @@
 	<linkedResources>
 		
 	<link>
-			<name>Drivers/STM32F0xx_HAL_Driver/stm32f0xx_hal_spi.c</name>
-			<type>1</type>
-			<location>PARENT-2-PROJECT_LOC/Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_spi.c</location>
-		</link><link>
-			<name>Application/User/stm32f0xx_hal_msp.c</name>
-			<type>1</type>
-			<location>PARENT-2-PROJECT_LOC/Src/stm32f0xx_hal_msp.c</location>
-		</link><link>
 			<name>Application/User/main.c</name>
 			<type>1</type>
 			<location>PARENT-2-PROJECT_LOC/Src/main.c</location>
@@ -102,5 +94,13 @@
 			<name>Drivers/CMSIS/system_stm32f0xx.c</name>
 			<type>1</type>
 			<location>PARENT-2-PROJECT_LOC/Drivers/CMSIS/Device/ST/STM32F0xx/Source/Templates/system_stm32f0xx.c</location>
+		</link><link>
+			<name>Drivers/STM32F0xx_HAL_Driver/stm32f0xx_hal_spi.c</name>
+			<type>1</type>
+			<location>PARENT-2-PROJECT_LOC/Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_spi.c</location>
+		</link><link>
+			<name>Application/User/stm32f0xx_hal_msp.c</name>
+			<type>1</type>
+			<location>PARENT-2-PROJECT_LOC/Src/stm32f0xx_hal_msp.c</location>
 		</link></linkedResources>
 </projectDescription>

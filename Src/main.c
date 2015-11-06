@@ -35,6 +35,9 @@
 
 /* USER CODE BEGIN Includes */
 
+#include "EtherShield.h"
+#define BUF_SIZE (1<<10)
+
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -55,6 +58,53 @@ static void MX_USART3_UART_Init(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
+
+void error (float error_num, char infinite) {
+	//printf("%u\r\n", error_num);
+	if (infinite)
+		while (1) {
+			int i = 0;
+			while (i++ < ((int)((float)(error_num) / 1) + 1) ) {
+				GPIOA->BSRR = GPIO_PIN_5;
+				HAL_Delay(1000 / error_num);
+				GPIOA->BSRR = GPIO_PIN_5 << 16;
+				HAL_Delay(1000 / error_num);
+			}
+		};
+
+	GPIOA->BSRR = GPIO_PIN_5;
+	HAL_Delay(1000);
+	GPIOA->BSRR = GPIO_PIN_5 << 16;
+
+	int i=0;
+	while (i++ < error_num) {
+		GPIOA->BSRR = GPIO_PIN_5;
+		HAL_Delay(300);
+		GPIOA->BSRR = GPIO_PIN_5 << 16;
+		HAL_Delay(200);
+	}
+
+	HAL_Delay(500);
+	NVIC_SystemReset();
+
+	return;
+}
+
+static inline void blink(int times, int delay) {
+	int i = 0;
+	while (i++ < times) {
+		GPIOA->BSRR = GPIO_PIN_5;
+		HAL_Delay(delay);
+		GPIOA->BSRR = GPIO_PIN_5 << 16;
+		HAL_Delay(delay);
+	}
+
+	return;
+}
+
+void ES_PingCallback(void) {
+	//STM_EVAL_LEDToggle(LED4);
+}
 
 /* USER CODE END PFP */
 
@@ -88,13 +138,40 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+
+	uint8_t mac[] = {02, 03, 04, 05, 06, 07};
+	uint8_t ip[]  = {10,4,33,123};
+	static uint8_t buf[BUF_SIZE + 1];
+
+	ES_enc28j60SpiInit(&hspi1);
+	ES_enc28j60Init(mac);
+
+	uint8_t enc28j60_rev = ES_enc28j60Revision();
+
+	if (enc28j60_rev <= 0)
+		error(2, 0);
+
+	ES_init_ip_arp_udp_tcp(mac, ip, 23);
+
+	while (1)
+	{
+		uint16_t dat_p;
+
+		// read packet, handle ping and wait for a tcp packet:
+		dat_p = ES_packetloop_icmp_tcp(buf,
+				ES_enc28j60PacketReceive(BUF_SIZE, buf));
+
+		/* dat_p will be unequal to zero if there is a valid
+		 * http get */
+		if (dat_p == 0) {
+			// no http request
+			continue;
+		}
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
 
-  }
+	}
   /* USER CODE END 3 */
 
 }
@@ -112,7 +189,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL8;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL12;
   RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV2;
   HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
@@ -139,11 +216,11 @@ void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLED;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLED;
@@ -206,8 +283,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF1_USART2;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  /*Configure GPIO pins : PA4 PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_LOW;

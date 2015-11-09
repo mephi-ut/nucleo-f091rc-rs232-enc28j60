@@ -38,7 +38,7 @@
 #include <string.h>
 #include "EtherShield.h"
 #define NET_BUF_SIZE (1<<10)
-#define UART_BUF_SIZE 1
+#define UART_BUF_SIZE (NET_BUF_SIZE << 2)
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define BUF_SIZE MAX(NET_BUF_SIZE, UART_BUF_SIZE)
@@ -49,6 +49,8 @@
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart3_tx;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -58,6 +60,7 @@ UART_HandleTypeDef huart3;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART3_UART_Init(void);
 
@@ -174,6 +177,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART3_UART_Init();
 
@@ -183,18 +187,50 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	static uint8_t uart_buf[UART_BUF_SIZE + 1];
+	static uint8_t uart_buf[UART_BUF_SIZE], *uart_buf_parsed, *uart_buf_filled, *uart_buf_end;
 
-	uint8_t mac[] = {02, 03, 04, 05, 06, 07};
-	uint8_t ip[]  = {10,4,33,123};
+	uint16_t netanswer_initialpacket_len = 0;
+	uint8_t  mac[] = {02, 03, 04, 05, 06, 07};
+	uint8_t  ip[]  = {10,  4, 33, 123};
 	static uint8_t net_buf[NET_BUF_SIZE + 1];
-	static uint8_t buf[BUF_SIZE + 1];
+	static uint8_t netanswer_buf[NET_BUF_SIZE + 1];
 
-	/* // USART echo node
+	uart_buf_parsed =  uart_buf;
+	{
+		HAL_StatusTypeDef r = HAL_UART_Receive_DMA(&huart3, uart_buf, UART_BUF_SIZE);
+		if (r != HAL_OK)
+			error(r, 0);
+	}
+	uart_buf_end    = &uart_buf[UART_BUF_SIZE];
+
+	/* // USART echo node (simple)
 	while (1)
 	{
 		if (HAL_UART_Receive(&huart3, uart_buf, UART_BUF_SIZE, 0) == HAL_OK) {
 			HAL_UART_Transmit(&huart3, uart_buf, 1, 0xffffffff);
+		}
+	}
+	*/
+
+	/* // USART echo node (DMA)
+	while (1)
+	{
+		uart_buf_filled = &uart_buf[UART_BUF_SIZE - huart3.hdmarx->Instance->CNDTR];
+		while (uart_buf_parsed != uart_buf_filled) {
+			uint16_t outlen;
+
+			if (uart_buf_filled > uart_buf_parsed) {
+				outlen = uart_buf_filled - uart_buf_parsed;
+			} else {
+				outlen = uart_buf_end    - uart_buf_parsed;
+			}
+
+			HAL_UART_Transmit(&huart3, uart_buf_parsed, outlen, 0xffffffff);
+
+			uart_buf_parsed += outlen;
+
+			if (uart_buf_parsed >= uart_buf_end)
+				uart_buf_parsed = uart_buf;
 		}
 	}
 	*/
@@ -208,7 +244,6 @@ int main(void)
 		error(2, 0);
 
 	ES_init_ip_arp_udp_tcp(mac, ip, 80);
-	uint16_t dat_p = 0;
 
 	/* // UDP echo server
 	while (1)
@@ -221,26 +256,49 @@ int main(void)
 	}
 	*/
 
-
 	while (1)
 	{
+		uint16_t dat_p;
 
+		uart_buf_filled = &uart_buf[UART_BUF_SIZE - huart3.hdmarx->Instance->CNDTR];
+		while (uart_buf_parsed != uart_buf_filled) {
+			uint16_t outlen;
+
+			if (uart_buf_filled > uart_buf_parsed) {
+				outlen = uart_buf_filled - uart_buf_parsed;
+			} else {
+				outlen = uart_buf_end    - uart_buf_parsed;
+			}
+
+			if (netanswer_initialpacket_len != 0) {
+				memcpy(net_buf, netanswer_buf, netanswer_initialpacket_len);
+				make_udp_reply_from_request(net_buf, (char *)uart_buf_parsed, outlen, 23);
+			}
+
+			uart_buf_parsed += outlen;
+
+			if (uart_buf_parsed >= uart_buf_end)
+				uart_buf_parsed = uart_buf;
+		}
+
+/*
 		while (HAL_UART_Receive(&huart3, uart_buf, UART_BUF_SIZE, 0xff) == HAL_OK) {
 			if (dat_p != 0) {
 				make_udp_reply_from_request(net_buf, (char *)uart_buf, UART_BUF_SIZE, 23);
 			}
 			HAL_Delay(400);
 		}
-
-		HAL_Delay(1);
+*/
 		dat_p = packetloop_icmp_udp(net_buf, ES_enc28j60PacketReceive(NET_BUF_SIZE, net_buf));
 
 		if (dat_p == 0)
 			continue;
 
-		HAL_UART_Transmit(&huart3, &net_buf[dat_p], info_data_len, 0xffffffff);
-		HAL_Delay(400);
+		netanswer_initialpacket_len = dat_p+info_data_len;
+		memcpy(netanswer_buf, net_buf, dat_p+info_data_len);
+		
 
+		HAL_UART_Transmit(&huart3, &net_buf[dat_p], info_data_len, 0xffffffff);
 
   /* USER CODE END WHILE */
 
@@ -321,6 +379,22 @@ void MX_USART3_UART_Init(void)
   huart3.Init.OneBitSampling = UART_ONEBIT_SAMPLING_DISABLED;
   huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
   HAL_UART_Init(&huart3);
+
+}
+
+/** 
+  * Enable DMA controller clock
+  */
+void MX_DMA_Init(void) 
+{
+  /* DMA controller clock enable */
+  __DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  HAL_NVIC_SetPriority(DMA1_Ch1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Ch1_IRQn);
+  HAL_NVIC_SetPriority(DMA1_Ch2_3_DMA2_Ch1_2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Ch2_3_DMA2_Ch1_2_IRQn);
 
 }
 

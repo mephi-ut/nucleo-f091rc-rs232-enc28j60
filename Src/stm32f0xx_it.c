@@ -41,6 +41,8 @@
 
 /* External variables --------------------------------------------------------*/
 extern SPI_HandleTypeDef hspi1;
+extern DMA_HandleTypeDef hdma_usart3_rx;
+extern DMA_HandleTypeDef hdma_usart3_tx;
 
 /******************************************************************************/
 /*            Cortex-M0 Processor Interruption and Exception Handlers         */ 
@@ -67,6 +69,34 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f0xx.s).                    */
 /******************************************************************************/
+
+/**
+* @brief This function handles DMA1 channel 1 interrupt.
+*/
+void DMA1_Ch1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Ch1_IRQn 0 */
+
+  /* USER CODE END DMA1_Ch1_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart3_rx);
+  /* USER CODE BEGIN DMA1_Ch1_IRQn 1 */
+
+  /* USER CODE END DMA1_Ch1_IRQn 1 */
+}
+
+/**
+* @brief This function handles DMA1 channel 2 to 3 and DMA2 channel 1 to 2 interrupts.
+*/
+void DMA1_Ch2_3_DMA2_Ch1_2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Ch2_3_DMA2_Ch1_2_IRQn 0 */
+
+  /* USER CODE END DMA1_Ch2_3_DMA2_Ch1_2_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart3_tx);
+  /* USER CODE BEGIN DMA1_Ch2_3_DMA2_Ch1_2_IRQn 1 */
+
+  /* USER CODE END DMA1_Ch2_3_DMA2_Ch1_2_IRQn 1 */
+}
 
 /**
 * @brief This function handles SPI1 global interrupt.

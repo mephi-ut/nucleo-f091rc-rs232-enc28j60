@@ -1,7 +1,7 @@
 The main repository: git clone [https://devel.mephi.ru/dyokunev/nucleo-f091rc-rs232-enc28j60](https://devel.mephi.ru/dyokunev/nucleo-f091rc-rs232-enc28j60)
 
 This is a software for:
-![device photo (top)](https://devel.mephi.ru/dyokunev/nucleo-f091rc-rs232-enc28j60/raw/master/doc/device_photo.jpg)
+![device photo (top)](https://devel.mephi.ru/dyokunev/nucleo-f091rc-rs232-enc28j60/raw/master/doc/device_photo_with_com.jpg)
 
 This's a UDP-based device to control servers over RS232. Components:
 * enc28j60 board;
